@@ -8,10 +8,17 @@ import os
 import random
 import re
 import time
-from xml.etree import ElementTree
+from xml.etree import ElementTree  # noqa: ICN001
 
 import requests
-from pkg_resources import DistributionNotFound, get_distribution, parse_version
+
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _get_version
+except ImportError:
+    # python < 3.8
+    from importlib_metadata import PackageNotFoundError
+    from importlib_metadata import version as _get_version
 
 try:
     from kazoo.client import KazooClient, KazooState
@@ -65,12 +72,9 @@ __author__ = "Daniel Lindsley, Joseph Kocherhans, Jacob Kaplan-Moss, Thomas Ried
 __all__ = ["Solr"]
 
 try:
-    pkg_distribution = get_distribution(__name__)
-    __version__ = pkg_distribution.version
-    version_info = pkg_distribution.parsed_version
-except DistributionNotFound:
+    __version__ = _get_version(__name__)
+except PackageNotFoundError:
     __version__ = "0.0.dev0"
-    version_info = parse_version(__version__)
 
 
 def get_version():
@@ -464,8 +468,8 @@ class Solr(object):
         :param handler: defaults to self.search_handler (fallback to 'select')
         :return:
         """
-        # specify json encoding of results
-        params["wt"] = "json"
+        # Returns json docs unless otherwise specified
+        params.setdefault("wt", "json")
         custom_handler = handler or self.search_handler
         handler = "select"
         if custom_handler:
@@ -502,6 +506,7 @@ class Solr(object):
         clean_ctrl_chars=True,
         commit=None,
         softCommit=False,
+        commitWithin=None,
         waitFlush=None,
         waitSearcher=None,
         overwrite=None,
@@ -540,6 +545,8 @@ class Solr(object):
             query_vars.append("commit=%s" % str(bool(commit)).lower())
         elif softCommit:
             query_vars.append("softCommit=%s" % str(bool(softCommit)).lower())
+        elif commitWithin is not None:
+            query_vars.append("commitWithin=%s" % str(int(commitWithin)))
 
         if waitFlush is not None:
             query_vars.append("waitFlush=%s" % str(bool(waitFlush)).lower())
@@ -909,7 +916,7 @@ class Solr(object):
         )
         return res
 
-    def _build_docs(self, docs, boost=None, fieldUpdates=None, commitWithin=None):
+    def _build_docs(self, docs, boost=None, fieldUpdates=None):
         # if no boost needed use json multidocument api
         #   The JSON API skips the XML conversion and speedup load from 15 to 20 times.
         #   CPU Usage is drastically lower.
@@ -933,9 +940,6 @@ class Solr(object):
         else:
             solrapi = "XML"
             message = ElementTree.Element("add")
-
-            if commitWithin:
-                message.set("commitWithin", commitWithin)
 
             for doc in docs:
                 el = self._build_xml_doc(doc, boost=boost, fieldUpdates=fieldUpdates)
@@ -1066,7 +1070,9 @@ class Solr(object):
         start_time = time.time()
         self.log.debug("Starting to build add request...")
         solrapi, m, len_message = self._build_docs(
-            docs, boost, fieldUpdates, commitWithin
+            docs,
+            boost,
+            fieldUpdates,
         )
         end_time = time.time()
         self.log.debug(
@@ -1078,6 +1084,7 @@ class Solr(object):
             m,
             commit=commit,
             softCommit=softCommit,
+            commitWithin=commitWithin,
             waitFlush=waitFlush,
             waitSearcher=waitSearcher,
             overwrite=overwrite,
@@ -1499,7 +1506,7 @@ class SolrCloud(Solr):
         )
 
     def _send_request(self, method, path="", body=None, headers=None, files=None):
-        for retry_number in range(0, self.retry_count):
+        for retry_number in range(self.retry_count):
             try:
                 self.url = self.zookeeper.getRandomURL(self.collection)
                 return Solr._send_request(self, method, path, body, headers, files)

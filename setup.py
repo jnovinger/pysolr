@@ -19,12 +19,15 @@ setup(
         "Operating System :: OS Independent",
         "Programming Language :: Python",
         "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
-        "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 3",
     ],
     url="https://github.com/django-haystack/pysolr/",
     license="BSD",
-    install_requires=["requests>=2.9.1"],
+    install_requires=[
+        "requests>=2.9.1",
+        "setuptools",
+        "importlib_metadata; python_version<'3.8'",
+    ],
     extras_require={"solrcloud": ["kazoo>=2.5.0"]},
     setup_requires=["setuptools_scm"],
 )
